@@ -1,8 +1,10 @@
 <?php
-include 'db.php';
-include 'header.php';
+// 1. Output buffering MUST be the very first thing to prevent header errors
+ob_start();
+require_once 'db.php';
 
 $error = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
     $password = $_POST['password'];
@@ -10,29 +12,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt = $conn->prepare("SELECT id, fullname, password, role FROM users WHERE email = ?");
     $stmt->bind_param("s", $email);
     $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
+    $result = $stmt->get_result();
 
-    if ($result && password_verify($password, $result['password'])) {
-        $_SESSION['user_id']  = $result['id'];
-        $_SESSION['fullname'] = $result['fullname'];
-        $_SESSION['role']     = $result['role'];
-        header("Location: dashboard.php");
-        exit;
+    if ($row = $result->fetch_assoc()) {
+        if (password_verify($password, $row['password'])) {
+            if (session_status() === PHP_SESSION_NONE) {
+                session_start();
+            }
+            $_SESSION['user_id'] = $row['id'];
+            $_SESSION['fullname'] = $row['fullname'];
+            $_SESSION['role'] = $row['role'];
+            
+            // Redirect safely
+            header("Location: dashboard.php");
+            exit();
+        } else {
+            $error = "Invalid password.";
+        }
     } else {
-        $error = "Invalid email or password.";
+        $error = "No account found with that email.";
     }
 }
 ?>
+<!-- Now include the header safely after all logic and redirects are done -->
+<?php include 'header.php'; ?>
 
-<h2>Login to Account</h2>
-<?php if($error): ?><p class="error"><?= $error; ?></p><?php endif; ?>
+<div class="container">
+    <h2>Login</h2>
+    <?php if (!empty($error)): ?>
+        <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
+    <?php endif; ?>
+    
+    <form method="POST" action="login.php">
+        <input type="email" name="email" placeholder="Email Address" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+</div>
 
-<form method="POST">
-    <label>Email:</label>
-    <input type="email" name="email" required>
-    <label>Password:</label>
-    <input type="password" name="password" required>
-    <button type="submit">Login</button>
-</form>
-</body>
-</html>
+<?php 
+// Flush the output buffer at the end
+ob_end_flush(); 
+?>
