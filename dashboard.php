@@ -4,6 +4,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 require_once 'db.php';
+// Auto-patch database schema if missing payment_status column
+$check_col = $conn->query("SHOW COLUMNS FROM subscriptions LIKE 'payment_status'");
+if ($check_col && $check_col->num_rows === 0) {
+    $conn->query("ALTER TABLE subscriptions ADD COLUMN payment_status ENUM('PAID', 'NOT PAID') DEFAULT 'NOT PAID'");
+}
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
