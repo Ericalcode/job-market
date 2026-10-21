@@ -1,93 +1,95 @@
 <?php
-include 'db.php';
-include 'header.php';
+// 1. Output buffering and action logic MUST be at the very top
+ob_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once 'db.php';
 
+// Ensure user is logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
-    exit;
+    exit();
 }
 
 $user_id = $_SESSION['user_id'];
-$role    = $_SESSION['role'];
+$role = $_SESSION['role'];
 
-// EMPLOYER: Post new job
-if ($role === 'employer' && isset($_POST['post_job'])) {
-    $title = trim($_POST['title']);
-    $location = trim($_POST['location']);
-    $desc = trim($_POST['description']);
-    $stmt = $conn->prepare("INSERT INTO jobs (employer_id, title, location, description) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("isss", $user_id, $title, $location, $desc);
-    $stmt->execute();
+// Handle Job Application Action (?apply=ID)
+if (isset($_GET['apply']) && $role === 'jobseeker') {
+    $job_id = intval($_GET['apply']);
+    
+    // Check if already applied
+    $chk = $conn->prepare("SELECT id FROM applications WHERE job_id = ? AND jobseeker_id = ?");
+    $chk->bind_param("ii", $job_id, $user_id);
+    $chk->execute();
+    $chk->store_result();
+    
+    if ($chk->num_rows === 0) {
+        $ins = $conn->prepare("INSERT INTO applications (job_id, jobseeker_id) VALUES (?, ?)");
+        $ins->bind_param("ii", $job_id, $user_id);
+        $ins->execute();
+    }
+    
+    // Redirect safely BEFORE any HTML output
+    header("Location: dashboard.php?applied=success");
+    exit();
 }
 
-// JOBSEEKER: Apply for job
-if ($role === 'jobseeker' && isset($_GET['apply'])) {
-    $job_id = intval($_GET['apply']);
-    $stmt = $conn->prepare("INSERT INTO applications (job_id, jobseeker_id) VALUES (?, ?)");
-    $stmt->bind_param("ii", $job_id, $user_id);
+// Handle Employer Job Posting POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'employer' && isset($_POST['post_job'])) {
+    $title = trim($_POST['title']);
+    $description = trim($_POST['description']);
+    $location = trim($_POST['location']);
+    
+    $stmt = $conn->prepare("INSERT INTO jobs (employer_id, title, description, location) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("isss", $user_id, $title, $description, $location);
     $stmt->execute();
-    header("Location: dashboard.php");
-    exit;
+    
+    header("Location: dashboard.php?posted=success");
+    exit();
 }
 ?>
+<!-- 2. Now it is safe to include header.php and render the dashboard HTML -->
+<?php include 'header.php'; ?>
 
-<h2>Welcome, <?= htmlspecialchars($_SESSION['fullname']); ?>!</h2>
+<div class="container">
+    <h2>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?> (<?php echo ucfirst($role); ?>)</h2>
+    
+    <?php if (isset($_GET['applied'])): ?>
+        <p style="color: green;">Successfully applied for the job!</p>
+    <?php endif; ?>
 
-<?php if ($role === 'employer'): ?>
-    <h3>Post a New Job Listing</h3>
-    <form method="POST">
-        <input type="hidden" name="post_job" value="1">
-        <label>Job Title:</label>
-        <input type="text" name="title" required>
-        <label>Location:</label>
-        <input type="text" name="location" required>
-        <label>Description:</label>
-        <textarea name="description" required></textarea>
-        <button type="submit">Publish Job</button>
-    </form>
+    <?php if ($role === 'employer'): ?>
+        <h3>Post a New Job</h3>
+        <form method="POST" action="dashboard.php">
+            <input type="text" name="title" placeholder="Job Title" required>
+            <textarea name="description" placeholder="Job Description" required></textarea>
+            <input type="text" name="location" placeholder="Location" required>
+            <button type="submit" name="post_job">Post Job</button>
+        </form>
 
-    <h3>Your Job Listings & Applicants</h3>
-    <?php
-    $sql = "SELECT j.title, u.fullname AS candidate, u.email, p.skills, a.applied_at 
-            FROM jobs j 
-            LEFT JOIN applications a ON j.id = a.job_id 
-            LEFT JOIN users u ON a.jobseeker_id = u.id 
-            LEFT JOIN profiles p ON u.id = p.user_id 
-            WHERE j.employer_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    ?>
-    <table>
-        <tr><th>Job Title</th><th>Candidate</th><th>Email</th><th>Skills</th><th>Applied Date</th></tr>
-        <?php while($row = $res->fetch_assoc()): ?>
-            <tr>
-                <td><?= htmlspecialchars($row['title']); ?></td>
-                <td><?= htmlspecialchars($row['candidate'] ?: 'No Applicants Yet'); ?></td>
-                <td><?= htmlspecialchars($row['email'] ?: '-'); ?></td>
-                <td><?= htmlspecialchars($row['skills'] ?: '-'); ?></td>
-                <td><?= htmlspecialchars($row['applied_at'] ?: '-'); ?></td>
-            </tr>
-        <?php endwhile; ?>
-    </table>
+        <h3>Your Posted Jobs</h3>
+        <!-- Fetch and list employer jobs here -->
 
-<?php else: ?>
-    <h3>Available Opportunities</h3>
-    <?php
-    $res = $conn->query("SELECT j.*, u.fullname AS company FROM jobs j JOIN users u ON j.employer_id = u.id ORDER BY created_at DESC");
-    ?>
-    <div class="card-grid">
-        <?php while($job = $res->fetch_assoc()): ?>
-            <div class="card">
-                <h4><?= htmlspecialchars($job['title']); ?></h4>
-                <p><strong>Company:</strong> <?= htmlspecialchars($job['company']); ?></p>
-                <p><strong>Location:</strong> <?= htmlspecialchars($job['location']); ?></p>
-                <p><?= htmlspecialchars($job['description']); ?></p>
-                <a href="dashboard.php?apply=<?= $job['id']; ?>" class="btn">Apply Now</a>
+    <?php else: ?>
+        <h3>Available Jobs</h3>
+        <?php
+        $jobs = $conn->query("SELECT * FROM jobs ORDER BY created_at DESC");
+        while($job = $jobs->fetch_assoc()):
+        ?>
+            <div class="job-card" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 10px;">
+                <h4><?php echo htmlspecialchars($job['title']); ?></h4>
+                <p><?php echo nl2br(htmlspecialchars($job['description'])); ?></p>
+                <p><strong>Location:</strong> <?php echo htmlspecialchars($job['location']); ?></p>
+                <a href="dashboard.php?apply=<?php echo $job['id']; ?>" class="btn">Apply Now</a>
             </div>
         <?php endwhile; ?>
-    </div>
-<?php endif; ?>
-</body>
-</html>
+    <?php endif; ?>
+
+    <p style="margin-top: 20px;"><a href="logout.php">Logout</a></p>
+</div>
+
+<?php 
+ob_end_flush(); 
+?>
