@@ -1,4 +1,3 @@
-```php
 <?php include 'header.php'; ?>
 
 <style>
@@ -527,4 +526,3 @@ body {
 
 </body>
 </html>
-```
