@@ -12,10 +12,9 @@ if (!isset($_SESSION['user_id'])) {
 
 $current_user_role = $_SESSION['role'] ?? 'jobseeker';
 
-// Helper function to mask user IDs for non-admin users (e.g., 12 becomes 1*2, 12345 becomes 1***5)
 function mask_user_id($id, $role) {
     if ($role === 'admin') {
-        return $id; // Admin sees real ID
+        return $id;
     }
     $str = (string)$id;
     $len = strlen($str);
@@ -33,7 +32,7 @@ function mask_user_id($id, $role) {
     <hr style="margin: 20px 0;">
 
     <?php
-    $sql = "SELECT u.id, u.fullname, u.email, u.role, p.title, p.skills, p.bio 
+    $sql = "SELECT u.id, u.fullname, u.email, u.role, p.title, p.skills, p.courses, p.bio, p.profile_pic 
             FROM users u 
             LEFT JOIN profiles p ON u.id = p.user_id 
             WHERE u.role != 'admin' 
@@ -45,13 +44,26 @@ function mask_user_id($id, $role) {
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
             <?php while($row = $result->fetch_assoc()): ?>
                 <div style="border: 1px solid #ccc; padding: 15px; border-radius: 5px; background: #fff;">
-                    <p style="font-size: 0.9em; color: #666;"><strong>User ID:</strong> <?php echo mask_user_id($row['id'], $current_user_role); ?></p>
-                    <h4><?php echo htmlspecialchars($row['fullname']); ?></h4>
-                    <p><strong>Role:</strong> <span style="text-transform: uppercase; color: #007bff;"><?php echo $row['role']; ?></span></p>
-                    <p><strong>Email:</strong> <?php echo htmlspecialchars($row['email']); ?></p>
-                    <p><strong>Professional Title:</strong> <?php echo htmlspecialchars($row['title'] ?? 'Not specified'); ?></p>
-                    <p><strong>Skills:</strong> <?php echo htmlspecialchars($row['skills'] ?? 'N/A'); ?></p>
-                    <p><strong>Bio:</strong> <?php echo nl2br(htmlspecialchars($row['bio'] ?? 'No bio provided.')); ?></p>
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                        <?php if (!empty($row['profile_pic'])): ?>
+                            <img src="<?php echo htmlspecialchars($row['profile_pic']); ?>" alt="Profile Pic" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #007bff;">
+                        <?php else: ?>
+                            <div style="width: 60px; height: 60px; border-radius: 50%; background: #e0e0e0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #555;">
+                                <?php echo strtoupper(substr($row['fullname'], 0, 1)); ?>
+                            </div>
+                        <?php endif; ?>
+                        <div>
+                            <h4 style="margin: 0;"><?php echo htmlspecialchars($row['fullname']); ?></h4>
+                            <span style="font-size: 0.8em; text-transform: uppercase; background: #007bff; color: #fff; padding: 2px 6px; border-radius: 3px;"><?php echo $row['role']; ?></span>
+                        </div>
+                    </div>
+
+                    <p style="font-size: 0.85em; color: #666; margin: 5px 0;"><strong>User ID:</strong> <?php echo mask_user_id($row['id'], $current_user_role); ?></p>
+                    <p style="margin: 5px 0;"><strong>Email:</strong> <?php echo htmlspecialchars($row['email']); ?></p>
+                    <p style="margin: 5px 0;"><strong>Title:</strong> <?php echo htmlspecialchars($row['title'] ?? 'Not specified'); ?></p>
+                    <p style="margin: 5px 0;"><strong>Skills:</strong> <?php echo htmlspecialchars($row['skills'] ?? 'N/A'); ?></p>
+                    <p style="margin: 5px 0;"><strong>Courses/Certifications:</strong> <?php echo nl2br(htmlspecialchars($row['courses'] ?? 'N/A')); ?></p>
+                    <p style="margin: 5px 0;"><strong>Bio:</strong> <?php echo nl2br(htmlspecialchars($row['bio'] ?? 'No bio provided.')); ?></p>
                 </div>
             <?php endwhile; ?>
         </div>
