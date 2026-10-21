@@ -16,7 +16,6 @@ $msg = '';
 
 // --- ADMIN ACTIONS ---
 if ($role === 'admin') {
-    // Approve Email Change
     if (isset($_GET['approve_email'])) {
         $target_id = intval($_GET['approve_email']);
         $q = $conn->prepare("SELECT pending_email FROM users WHERE id = ?");
@@ -32,7 +31,6 @@ if ($role === 'admin') {
         }
     }
 
-    // Delete User
     if (isset($_GET['delete_user'])) {
         $del_id = intval($_GET['delete_user']);
         if ($del_id !== $user_id) {
@@ -43,7 +41,6 @@ if ($role === 'admin') {
         }
     }
 
-    // Add Subscription Fee Record
     if (isset($_POST['add_subscription'])) {
         $sub_user_id = intval($_POST['user_id']);
         $amount = floatval($_POST['amount']);
@@ -53,7 +50,6 @@ if ($role === 'admin') {
         $msg = "Subscription fee added successfully!";
     }
 
-    // Create User via Admin
     if (isset($_POST['create_user'])) {
         $name = trim($_POST['fullname']);
         $email = trim($_POST['email']);
@@ -67,41 +63,53 @@ if ($role === 'admin') {
     }
 }
 
-// --- JOBSEEKER JOB APPLICATION WITH EMAIL NOTIFICATION ---
+// --- EMPLOYER POST JOB ACTION ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'employer' && isset($_POST['post_job'])) {
+    $title = trim($_POST['title']);
+    $description = trim($_POST['description']);
+    $location = trim($_POST['location']);
+
+    $stmt = $conn->prepare("INSERT INTO jobs (employer_id, title, description, location, status) VALUES (?, ?, ?, ?, 'active')");
+    $stmt->bind_param("isss", $user_id, $title, $description, $location);
+    $stmt->execute();
+    header("Location: dashboard.php?msg=job_posted");
+    exit();
+}
+
+// --- JOBSEEKER JOB APPLICATION ACTION ---
 if (isset($_GET['apply']) && $role === 'jobseeker') {
     $job_id = intval($_GET['apply']);
-    
-    // Fetch job and employer details
-    $j_stmt = $conn->prepare("SELECT j.title, u.email AS employer_email, u.fullname AS employer_name FROM jobs j JOIN users u ON j.employer_id = u.id WHERE j.id = ?");
-    $j_stmt->bind_param("i", $job_id);
-    $j_stmt->execute();
-    $job_info = $j_stmt->get_result()->fetch_assoc();
 
-    // Fetch applicant details
-    $u_stmt = $conn->prepare("SELECT fullname, email FROM users WHERE id = ?");
-    $u_stmt->bind_param("i", $user_id);
-    $u_stmt->execute();
-    $applicant_info = $u_stmt->get_result()->fetch_assoc();
+    // Check if already applied
+    $chk = $conn->prepare("SELECT id FROM applications WHERE job_id = ? AND jobseeker_id = ?");
+    $chk->bind_param("ii", $job_id, $user_id);
+    $chk->execute();
+    $chk->store_result();
 
-    if ($job_info && $applicant_info) {
-        $chk = $conn->prepare("SELECT id FROM applications WHERE job_id = ? AND jobseeker_id = ?");
-        $chk->bind_param("ii", $job_id, $user_id);
-        $chk->execute();
-        $chk->store_result();
-        
-        if ($chk->num_rows === 0) {
-            $ins = $conn->prepare("INSERT INTO applications (job_id, jobseeker_id) VALUES (?, ?)");
-            $ins->bind_param("ii", $job_id, $user_id);
-            $ins->execute();
+    if ($chk->num_rows === 0) {
+        $ins = $conn->prepare("INSERT INTO applications (job_id, jobseeker_id) VALUES (?, ?)");
+        $ins->bind_param("ii", $job_id, $user_id);
+        $ins->execute();
 
-            // Send Application Email to Employer
-            $emp_subject = "New Job Application Received: " . $job_info['title'];
-            $emp_message = "Hello " . $job_info['employer_name'] . ",\n\nYou have received a new application for your job posting: " . $job_info['title'] . ".\n\nApplicant Name: " . $applicant_info['fullname'] . "\nApplicant Email: " . $applicant_info['email'] . "\n\nLog in to your dashboard to review.";
+        // Fetch job and employer details for notifications
+        $j_stmt = $conn->prepare("SELECT j.title, u.email AS employer_email, u.fullname AS employer_name FROM jobs j JOIN users u ON j.employer_id = u.id WHERE j.id = ?");
+        $j_stmt->bind_param("i", $job_id);
+        $j_stmt->execute();
+        $job_info = $j_stmt->get_result()->fetch_assoc();
+
+        // Fetch applicant details
+        $u_stmt = $conn->prepare("SELECT fullname, email FROM users WHERE id = ?");
+        $u_stmt->bind_param("i", $user_id);
+        $u_stmt->execute();
+        $applicant_info = $u_stmt->get_result()->fetch_assoc();
+
+        if ($job_info && $applicant_info) {
+            $emp_subject = "New Job Application: " . $job_info['title'];
+            $emp_message = "Hello " . $job_info['employer_name'] . ",\n\n" . $applicant_info['fullname'] . " (" . $applicant_info['email'] . ") has applied for your job: " . $job_info['title'] . ".\n\nLog in to your dashboard to review applicant profiles.";
             @mail($job_info['employer_email'], $emp_subject, $emp_message);
 
-            // Send Acknowledgement Email to Employee / Jobseeker
             $seeker_subject = "Application Confirmation: " . $job_info['title'];
-            $seeker_message = "Hello " . $applicant_info['fullname'] . ",\n\nYour application for '" . $job_info['title'] . "' has been successfully submitted to " . $job_info['employer_name'] . ".\n\nThank you for using CareerConnect!";
+            $seeker_message = "Hello " . $applicant_info['fullname'] . ",\n\nYour application for '" . $job_info['title'] . "' has been submitted successfully.";
             @mail($applicant_info['email'], $seeker_subject, $seeker_message);
         }
     }
@@ -113,15 +121,20 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
 
 <div class="container">
     <h2>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?> (<?php echo ucfirst($role); ?>)</h2>
-    
+
     <div style="margin: 15px 0;">
         <a href="directory.php" class="btn" style="margin-right: 10px;">View User Directory</a>
         <a href="reports.php" class="btn" style="margin-right: 10px;">SQL Reports</a>
         <a href="settings.php" class="btn">Account Settings</a>
     </div>
 
-    <?php if (!empty($msg) || isset($_GET['msg'])): ?>
-        <p style="color: green; font-weight: bold;"><?php echo $msg ?: "Action completed successfully!"; ?></p>
+    <?php if (!empty($msg) || isset($_GET['msg']) || isset($_GET['applied'])): ?>
+        <p style="color: green; font-weight: bold;">
+            <?php 
+                if (isset($_GET['applied'])) echo "Application submitted successfully!";
+                else echo $msg ?: "Action completed successfully!"; 
+            ?>
+        </p>
     <?php endif; ?>
 
     <!-- ================= ADMIN PANEL ================= -->
@@ -129,12 +142,9 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
         <hr>
         <h3>Admin Management Panel</h3>
 
-        <!-- Pending Email Approvals -->
         <h4>Pending Email Change Requests</h4>
-        <?php
-        $pendings = $conn->query("SELECT id, fullname, email, pending_email FROM users WHERE pending_email IS NOT NULL");
-        ?>
-        <?php if ($pendings->num_rows > 0): ?>
+        <?php $pendings = $conn->query("SELECT id, fullname, email, pending_email FROM users WHERE pending_email IS NOT NULL"); ?>
+        <?php if ($pendings && $pendings->num_rows > 0): ?>
             <table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:20px;">
                 <tr style="background:#f2f2f2;"><th>Name</th><th>Current Email</th><th>Requested New Email</th><th>Action</th></tr>
                 <?php while($p = $pendings->fetch_assoc()): ?>
@@ -150,7 +160,6 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
             <p>No pending email change requests.</p>
         <?php endif; ?>
 
-        <!-- Create User Form -->
         <h4>Create New User Account</h4>
         <form method="POST" style="background:#f9f9f9; padding:15px; border:1px solid #ddd; margin-bottom:20px;">
             <input type="text" name="fullname" placeholder="Full Name" required style="margin-right:10px; padding:6px;">
@@ -164,7 +173,6 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
             <button type="submit" name="create_user">Create User</button>
         </form>
 
-        <!-- Manage Subscriptions Form -->
         <h4>Assign Subscription Fee</h4>
         <form method="POST" style="background:#f9f9f9; padding:15px; border:1px solid #ddd; margin-bottom:20px;">
             <select name="user_id" required style="padding:6px; margin-right:10px;">
@@ -180,11 +188,8 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
             <button type="submit" name="add_subscription">Add Subscription Fee</button>
         </form>
 
-        <!-- All Users Table -->
         <h4>All Users & Account Management</h4>
-        <?php
-        $all_users = $conn->query("SELECT * FROM users ORDER BY created_at DESC");
-        ?>
+        <?php $all_users = $conn->query("SELECT * FROM users ORDER BY created_at DESC"); ?>
         <table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:20px;">
             <tr style="background:#f2f2f2;"><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
             <?php while($usr = $all_users->fetch_assoc()): ?>
@@ -200,24 +205,6 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
             <?php endwhile; ?>
         </table>
 
-        <!-- Subscription Records -->
-        <h4>Subscription Records</h4>
-        <?php
-        $subs = $conn->query("SELECT s.*, u.fullname, u.email FROM subscriptions s JOIN users u ON s.user_id = u.id ORDER BY s.created_at DESC");
-        ?>
-        <table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-            <tr style="background:#f2f2f2;"><th>User</th><th>Email</th><th>Amount</th><th>Status</th><th>Date</th></tr>
-            <?php while($sub = $subs->fetch_assoc()): ?>
-            <tr>
-                <td><?php echo htmlspecialchars($sub['fullname']); ?></td>
-                <td><?php echo htmlspecialchars($sub['email']); ?></td>
-                <td>$<?php echo number_format($sub['amount'], 2); ?></td>
-                <td><?php echo ucfirst($sub['status']); ?></td>
-                <td><?php echo $sub['created_at']; ?></td>
-            </tr>
-            <?php endwhile; ?>
-        </table>
-
     <!-- ================= EMPLOYER VIEW ================= -->
     <?php elseif ($role === 'employer'): ?>
         <h3>Post a New Job</h3>
@@ -228,18 +215,60 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
             <button type="submit" name="post_job">Post Job</button>
         </form>
 
-        <h3>Your Job Postings</h3>
+        <h3>Your Job Postings & Applicants</h3>
         <?php
         $my_jobs = $conn->prepare("SELECT * FROM jobs WHERE employer_id = ? ORDER BY created_at DESC");
         $my_jobs->bind_param("i", $user_id);
         $my_jobs->execute();
         $res = $my_jobs->get_result();
+
+        if ($res->num_rows === 0) {
+            echo "<p>You have not posted any jobs yet.</p>";
+        }
+
         while($job = $res->fetch_assoc()):
+            $job_id = $job['id'];
         ?>
-            <div style="border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; background: #fff;">
-                <h4><?php echo htmlspecialchars($job['title']); ?></h4>
+            <div style="border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; background: #fff; border-radius: 5px;">
+                <h4 style="margin-top:0; color:#007bff;"><?php echo htmlspecialchars($job['title']); ?></h4>
                 <p><?php echo nl2br(htmlspecialchars($job['description'])); ?></p>
-                <p><strong>Status:</strong> <?php echo ucfirst($job['status']); ?></p>
+                <p><strong>Location:</strong> <?php echo htmlspecialchars($job['location']); ?> | <strong>Status:</strong> <?php echo ucfirst($job['status']); ?></p>
+
+                <!-- Fetch Applicants for this specific Job -->
+                <h5 style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Applicants Profiles:</h5>
+                <?php
+                $app_stmt = $conn->prepare("
+                    SELECT u.fullname, u.email, p.title, p.skills, p.bio, a.applied_at 
+                    FROM applications a
+                    JOIN users u ON a.jobseeker_id = u.id
+                    LEFT JOIN profiles p ON u.id = p.user_id
+                    WHERE a.job_id = ?
+                    ORDER BY a.applied_at DESC
+                ");
+                $app_stmt->bind_param("i", $job_id);
+                $app_stmt->execute();
+                $applicants = $app_stmt->get_result();
+
+                if ($applicants->num_rows > 0):
+                ?>
+                    <div style="display: grid; gap: 10px;">
+                        <?php while($app = $applicants->fetch_assoc()): ?>
+                            <div style="background: #f8f9fa; border: 1px solid #e9ecef; padding: 10px; border-radius: 4px;">
+                                <strong><?php echo htmlspecialchars($app['fullname']); ?></strong> (<?php echo htmlspecialchars($app['email']); ?>)
+                                <br><small>Applied on: <?php echo $app['applied_at']; ?></small>
+                                <p style="margin: 5px 0 0 0; font-size: 0.9em;">
+                                    <strong>Title:</strong> <?php echo htmlspecialchars($app['title'] ?? 'N/A'); ?> | 
+                                    <strong>Skills:</strong> <?php echo htmlspecialchars($app['skills'] ?? 'N/A'); ?>
+                                </p>
+                                <p style="margin: 3px 0 0 0; font-size: 0.85em; color: #555;">
+                                    <?php echo nl2br(htmlspecialchars($app['bio'] ?? 'No bio provided.')); ?>
+                                </p>
+                            </div>
+                        <?php endwhile; ?>
+                    </div>
+                <?php else: ?>
+                    <p style="color: #777; font-size: 0.9em; margin:0;">No applicants for this position yet.</p>
+                <?php endif; ?>
             </div>
         <?php endwhile; ?>
 
@@ -247,15 +276,36 @@ if (isset($_GET['apply']) && $role === 'jobseeker') {
     <?php else: ?>
         <h3>Available Jobs</h3>
         <?php
+        // Pre-fetch applied jobs for the current logged-in jobseeker
+        $applied_jobs = [];
+        $app_check = $conn->prepare("SELECT job_id FROM applications WHERE jobseeker_id = ?");
+        $app_check->bind_param("i", $user_id);
+        $app_check->execute();
+        $app_res = $app_check->get_result();
+        while ($a_row = $app_res->fetch_assoc()) {
+            $applied_jobs[] = $a_row['job_id'];
+        }
+
         $jobs = $conn->query("SELECT j.*, u.fullname AS employer_name FROM jobs j JOIN users u ON j.employer_id = u.id WHERE j.status = 'active' ORDER BY j.created_at DESC");
+
+        if ($jobs->num_rows === 0) {
+            echo "<p>No active job listings available.</p>";
+        }
+
         while($job = $jobs->fetch_assoc()):
+            $is_applied = in_array($job['id'], $applied_jobs);
         ?>
-            <div style="border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; background: #fff;">
-                <h4><?php echo htmlspecialchars($job['title']); ?></h4>
+            <div style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; background: #fff; border-radius: 5px;">
+                <h4 style="margin-top:0; color:#007bff;"><?php echo htmlspecialchars($job['title']); ?></h4>
                 <p><em>Posted by: <?php echo htmlspecialchars($job['employer_name']); ?></em></p>
                 <p><?php echo nl2br(htmlspecialchars($job['description'])); ?></p>
                 <p><strong>Location:</strong> <?php echo htmlspecialchars($job['location']); ?></p>
-                <a href="dashboard.php?apply=<?php echo $job['id']; ?>" class="btn">Apply Now</a>
+
+                <?php if ($is_applied): ?>
+                    <button class="btn" disabled style="background-color: #6c757d; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: not-allowed;">Applied</button>
+                <?php else: ?>
+                    <a href="dashboard.php?apply=<?php echo $job['id']; ?>" class="btn" style="background-color: #28a745; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; display: inline-block;">Apply Now</a>
+                <?php endif; ?>
             </div>
         <?php endwhile; ?>
     <?php endif; ?>
