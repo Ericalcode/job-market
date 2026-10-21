@@ -9,10 +9,13 @@
             <p>Find job listings, build your skill profile, and submit applications.</p>
         </a>
         <a href="register.php?role=employer" class="card">
-            <h3>💼 Looking for Talent</h3>
+            <h3>💼 Looking for Talent/workers?</h3>
             <p>Post open positions, view candidate skill profiles, and review applicants.</p>
         </a>
     </div>
 </div>
+<footer>  Careerconnect@2026 <br>
+Built by Eric Maina ,5Techx
+</footer>
 </body>
 </html>
