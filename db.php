@@ -1,13 +1,15 @@
 <?php
-$host     = getenv('DB_HOST')     ?: 'localhost';
-$user     = getenv('DB_USER')     ?: 'root';
-$password = getenv('DB_PASSWORD') ?: '';
-$database = getenv('DB_NAME')     ?: 'job_portal';
-$port     = getenv('DB_PORT')     ?: '3306';
+$host     = getenv('DB_HOST')     ?: 'gateway01.ap-northeast-1.prod.aws.tidbcloud.com';
+$user     = getenv('DB_USER')     ?: '3HAWRh3isi9aYxU.root';
+$password = getenv('DB_PASSWORD') ?: 'H7ckagCvEWJc5ztu';
+$database = getenv('DB_NAME')     ?: 'sys';
+$port     = getenv('DB_PORT')     ?: 4000;
 
-$conn = new mysqli($host, $user, $password, $database, $port);
+// TiDB requires SSL for secure cloud connections
+$conn = mysqli_init();
+$conn->ssl_set(NULL, NULL, NULL, NULL, NULL);
 
-if ($conn->connect_error) {
-    die("Database Connection Error: " . $conn->connect_error);
+if (!@$conn->real_connect($host, $user, $password, $database, $port, NULL, MYSQLI_CLIENT_SSL)) {
+    die("Connect Error: " . mysqli_connect_error());
 }
 ?>
