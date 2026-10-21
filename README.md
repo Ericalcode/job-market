@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 Clone the Repository:
 
-git clone https://github.com/your-username/job-market.git
+git clone https://github.com/Ericalcode/job-market.git
 cd job-market
 
 
